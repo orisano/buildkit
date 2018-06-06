@@ -28,33 +28,40 @@ func New(address string, opts ...ClientOpt) (*Client, error) {
 		grpc.WithDialer(dialer),
 		grpc.FailOnNonTempDialError(true),
 	}
+
+	timeout := 30 * time.Second
 	needWithInsecure := true
+
 	for _, o := range opts {
-		if _, ok := o.(*withBlockOpt); ok {
+		switch opt := o.(type) {
+		case *withBlockOpt:
 			gopts = append(gopts, grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
-		}
-		if credInfo, ok := o.(*withCredentials); ok {
-			opt, err := loadCredentials(credInfo)
+		case *withCredentials:
+			gopt, err := loadCredentials(opt)
 			if err != nil {
 				return nil, err
 			}
-			gopts = append(gopts, opt)
+			gopts = append(gopts, gopt)
 			needWithInsecure = false
-		}
-		if wt, ok := o.(*withTracer); ok {
+		case *withTracer:
 			gopts = append(gopts,
-				grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(wt.tracer, otgrpc.LogPayloads())),
-				grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(wt.tracer)))
+				grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(opt.tracer, otgrpc.LogPayloads())),
+				grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(opt.tracer)))
+		case *withTimeout:
+			timeout = opt.duration
+		default:
 		}
 	}
+
 	if needWithInsecure {
 		gopts = append(gopts, grpc.WithInsecure())
 	}
+
 	if address == "" {
 		address = appdefaults.Address
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	conn, err := grpc.DialContext(ctx, address, gopts...)
@@ -133,4 +140,12 @@ func WithTracer(t opentracing.Tracer) ClientOpt {
 
 type withTracer struct {
 	tracer opentracing.Tracer
+}
+
+type withTimeout struct {
+	duration time.Duration
+}
+
+func WithTimeout(d time.Duration) ClientOpt {
+	return &withTimeout{d}
 }
