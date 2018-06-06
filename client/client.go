@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io/ioutil"
-	"time"
 
 	"github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -24,6 +23,11 @@ type ClientOpt interface{}
 
 // New returns a new buildkit client. Address can be empty for the system-default address.
 func New(address string, opts ...ClientOpt) (*Client, error) {
+	return NewContext(context.Background(), address, opts...)
+}
+
+// NewContext returns a new buildkit client. Address can be empty for the system-default address.
+func NewContext(ctx context.Context, address string, opts ...ClientOpt) (*Client, error) {
 	gopts := []grpc.DialOption{
 		grpc.WithDialer(dialer),
 		grpc.FailOnNonTempDialError(true),
@@ -53,9 +57,6 @@ func New(address string, opts ...ClientOpt) (*Client, error) {
 	if address == "" {
 		address = appdefaults.Address
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	conn, err := grpc.DialContext(ctx, address, gopts...)
 	if err != nil {
